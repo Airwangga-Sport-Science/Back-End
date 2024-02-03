@@ -112,44 +112,51 @@ def get_user():
     user = cursor.fetchone()
     return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
 
+from flask import request, jsonify
+import bcrypt
+import jwt
+import datetime
+
 @app.route('/register', methods=['POST'])
 def register():
-    username = request.json['username']
-    password = request.json['password']
-    role = request.json['role']
-    name = request.json['name']
-    email = request.json['email']
-    phone = request.json['phone']
-    weight = request.json['weight']
-    height = request.json['height']
-    
-    cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
-    user = cursor.fetchone()
+    try:
+        username = request.json['username']
+        password = request.json['password']
+        role = request.json['role']
+        name = request.json['name']
+        email = request.json['email']
+        phone = request.json['phone']
+        birth_date = request.json['birthdate']
 
-    if user:
-        return jsonify({'message': 'User already exists'}), 409
+        cursor = mysql.connection.cursor() # get the cursor from the connection
+        cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
+        user = cursor.fetchone()
 
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    hashed_pass = hashed_password.decode('utf-8')
-    cursor.execute('INSERT INTO users (username, password, role, name, email, phone) VALUES (%s, %s, %s, %s, %s, %s)', (username, hashed_pass, role, name, email, phone))
-    mysql.connection.commit()
+        if user:
+            return jsonify({'message': 'User already exists'}), 409
 
-    cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
-    user = cursor.fetchone()
-    user_id = user['id']
-    if role == "1":
-
-        cursor.execute('INSERT INTO players (user_id, weight, height) VALUES (%s, %s, %s)', (user_id, weight, height))
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        hashed_pass = hashed_password.decode('utf-8')
+        cursor.execute('INSERT INTO users (username, password, role, name, email, phone) VALUES (%s, %s, %s, %s, %s, %s)', (username, hashed_pass, role, name, email, phone))
         mysql.connection.commit()
 
-    token = jwt.encode(payload={'user_id': user['id'], 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=2)},
-                key='secret',
-                algorithm="HS256")
+        cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
+        user = cursor.fetchone()
+        user_id = user['id']
+        print(user_id,user)
+        if role == 1:
+            cursor.execute('INSERT INTO players (user_id, birth_date) VALUES (%s, %s)', (user_id, birth_date))
+            mysql.connection.commit()
 
+        token = jwt.encode(payload={'user_id': user['id'], 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=2)},
+                    key='secret',
+                    algorithm="HS256")
 
-    
-    return jsonify({'message': 'User created successfully', 'status': 'success', 'token': token}), 201
+        return jsonify({'message': 'User created successfully', 'status': 'success', 'token': token}), 201
+
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
+
 
 @app.route('/positions', methods=['GET'])
 def display_positions():
@@ -203,38 +210,40 @@ def create_article():
 def get_article_attributes_by_id(id):
     cursor = mysql.connection.cursor()
     cursor.execute('''
-        SELECT 
-            a.id AS article_id,
-            a.title AS article_title,
-            a.body AS article_body,
-            GROUP_CONCAT(DISTINCT p.name) AS article_positions,
-            a.steps AS article_steps,
-            a.thumbnail AS article_thumbnail,
-            a.create_date AS article_create_date,
-            ua.user_id AS player_user_id,
-            ua.status AS player_status
-        FROM 
-            articles a
-        LEFT JOIN 
-            article_positions ap ON a.id = ap.article_id
-        LEFT JOIN 
-            positions p ON ap.position_id = p.id
-        LEFT JOIN 
-            user_articles ua ON a.id = ua.article_id
-        WHERE 
-            ap.position_id IN (
-                SELECT position_1 FROM player_positions WHERE player_attributes_id = %s
-                UNION
-                SELECT position_2 FROM player_positions WHERE player_attributes_id = %s
-                UNION
-                SELECT position_3 FROM player_positions WHERE player_attributes_id = %s
-            )
-        GROUP BY 
-            a.id, a.title, a.body, ua.user_id
+    SELECT 
+        a.id AS article_id,
+        a.title AS article_title,
+        a.body AS article_body,
+        GROUP_CONCAT(DISTINCT p.name) AS article_positions,
+        a.steps AS article_steps,
+        a.thumbnail AS article_thumbnail,
+        a.create_date AS article_create_date,
+        ua.user_id AS player_user_id,
+        ua.status AS player_status
+    FROM 
+        articles a
+    LEFT JOIN 
+        article_positions ap ON a.id = ap.article_id
+    LEFT JOIN 
+        positions p ON ap.position_id = p.id
+    LEFT JOIN 
+        user_articles ua ON a.id = ua.article_id
+    WHERE 
+        ap.position_id IN (
+            SELECT position_1 FROM player_positions WHERE player_attributes_id = %s
+            UNION
+            SELECT position_2 FROM player_positions WHERE player_attributes_id = %s
+            UNION
+            SELECT position_3 FROM player_positions WHERE player_attributes_id = %s
+        )
+    GROUP BY 
+        a.id, a.title, a.body, ua.user_id
     ''', (id, id, id))
+
     article_attributes = cursor.fetchall()
 
     return jsonify({'message': 'Article attributes retrieved successfully', 'data': article_attributes, 'status': 'success'})
+
 @app.route('/articles/complete/<int:id>', methods=['GET'])
 def get_completed_articles(id):
     cursor = mysql.connection.cursor()
@@ -313,10 +322,7 @@ def update_article(id):
 @app.route('/articles/<int:id>', methods=['DELETE'])
 def delete_article(id):
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('DELETE FROM articles WHERE id=%s', (id,))
-    mysql.connection.commit()
-
-    cursor.execute('DELETE FROM article_positions WHERE article_id=%s', (id,))
+    cursor.execute('UPDATE articles SET deleted = 0 WHERE id = %s', (id,))
     mysql.connection.commit()
 
     return jsonify({'message': 'Article deleted successfully'})
@@ -335,25 +341,27 @@ def get_player():
     id = decoded['user_id']
 
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('SELECT * FROM players LEFT JOIN player_positions ON players.user_id = player_positions.user_id LEFT JOIN users ON players.user_id = users.id WHERE players.user_id = %s', (id,))
+    cursor.execute('SELECT * FROM players LEFT JOIN users ON players.user_id = users.id WHERE players.user_id = %s', (id,))
     player = cursor.fetchone()
 
     cursor2 = mysql.connection.cursor()  # get the cursor from the connection
-    cursor2.execute('SELECT movement_sprint_speed, movement_acceleration, mentality_positioning, mentality_interceptions, '
-                    'mentality_aggression, attacking_finishing, power_shot_power, power_long_shots, '
-                    'attacking_volleys, mentality_penalties, mentality_vision, attacking_crossing, '
-                    'skill_fk_accuracy, attacking_short_passing, skill_long_passing, skill_curve, '
-                    'movement_agility, movement_balance, movement_reactions, skill_ball_control, '
-                    'skill_dribbling, mentality_composure, attacking_heading_accuracy, '
-                    'defending_marking_awareness, defending_standing_tackle, defending_sliding_tackle, '
-                    'power_jumping, power_stamina, power_strength, created_date,id '  # Removed the extra comma here
-                    'FROM player_attributes2 WHERE user_id = %s ORDER BY created_date', (id,))
+    cursor2.execute(
+    'SELECT movement_sprint_speed, movement_acceleration, mentality_positioning, mentality_interceptions, '
+    'mentality_aggression, attacking_finishing, power_shot_power, power_long_shots, '
+    'attacking_volleys, mentality_penalties, mentality_vision, attacking_crossing, '
+    'skill_fk_accuracy, attacking_short_passing, skill_long_passing, skill_curve, '
+    'movement_agility, movement_balance, movement_reactions, skill_ball_control, '
+    'skill_dribbling, mentality_composure, attacking_heading_accuracy, '
+    'defending_marking_awareness, defending_standing_tackle, defending_sliding_tackle, '
+    'power_jumping, power_stamina, power_strength, created_date, id, height, weight, prefered_foot '
+    'FROM player_attributes2 WHERE user_id = %s ORDER BY created_date', (id,))
+
     attributes = cursor2.fetchall()
 
     #foreach attribute
     for attribute in attributes:
         cursor2.execute(
-            'SELECT pos1.name, pos2.name, pos3.name FROM player_positions LEFT JOIN positions as pos1 ON player_positions.position_1 = pos1.id LEFT JOIN positions as pos2 ON player_positions.position_2 = pos2.id LEFT JOIN positions as pos3 ON player_positions.position_3 = pos3.id WHERE player_attributes_id = %s', (attribute['id'],)
+            'SELECT pos1.name, pos2.name, pos3.name, player_alike1, player_alike2, player_alike3 FROM player_positions LEFT JOIN positions as pos1 ON player_positions.position_1 = pos1.id LEFT JOIN positions as pos2 ON player_positions.position_2 = pos2.id LEFT JOIN positions as pos3 ON player_positions.position_3 = pos3.id WHERE player_attributes_id = %s', (attribute['id'],)
         )
         positions = cursor2.fetchone()
 
@@ -439,6 +447,45 @@ def get_attribute(id):
     attribute = cursor.fetchone()
 
     return jsonify({'message': 'Attribute retrieved successfully', 'data': attribute, 'status': 'success'}), 200
+@app.route('/attribute', methods=['POST'])
+def create_attribute():
+    decoded = check_token()
+
+    if decoded is None:
+        return jsonify({'message': 'Authentication failed'}), 401
+    
+    user_id = decoded['user_id']
+
+    try:
+        json_attribute = request.get_json()
+        new_attributes = json_attribute['attributes']
+
+        attributes_series = pd.Series(new_attributes)
+        # Insert into player_positions table
+        alike = infer(attributes_series, player_position_transformed)
+        result_object = {
+            'rwb': round(alike['rwb']),
+            'lwb': round(alike['lwb']),
+            'rb': round(alike['rb']),
+            'lb': round(alike['lb']),
+            'cdm': round(alike['cdm']),
+            'lw': round(alike['lw']),
+            'rw': round(alike['rw']),
+            'st': round(alike['st']),
+            'cb': round(alike['cb']),
+            'lm': round(alike['lm']),
+            'rm': round(alike['rm']),
+            'cf': round(alike['cf']),
+        }
+        
+        positons = [pos.upper() for pos, _ in sorted(result_object.items(), key=lambda x: x[1], reverse=True)[:3]]
+
+        player_alike = alike['similar_players']
+
+        return jsonify({'message': 'Attributes updated successfully', 'status': 'success','positions': positons, 'alike': player_alike[0]}), 200
+
+    except Exception as e:
+        return jsonify({'message': f'Error updating attributes: {str(e)}'}), 500
 
 @app.route('/attribute', methods=['PUT'])
 def update_attribute():
@@ -454,8 +501,8 @@ def update_attribute():
         new_attributes = json_attribute['attributes']
 
         cursor = mysql.connection.cursor()
-
-        # Insert the attributes in the database
+        print(new_attributes['movement_sprint_speed'], user_id)
+        #Insert the attributes in the database
         cursor.execute(
             'INSERT INTO player_attributes2 ('
             'movement_sprint_speed, movement_acceleration, mentality_positioning, mentality_interceptions, '
@@ -465,8 +512,8 @@ def update_attribute():
             'movement_agility, movement_balance, movement_reactions, skill_ball_control, '
             'skill_dribbling, mentality_composure, attacking_heading_accuracy, '
             'defending_marking_awareness, defending_standing_tackle, defending_sliding_tackle, '
-            'power_jumping, power_stamina, power_strength, user_id) '
-            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+            'power_jumping, power_stamina, power_strength,height,weight,prefered_foot, user_id) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
             (new_attributes['movement_sprint_speed'], new_attributes['movement_acceleration'], new_attributes['mentality_positioning'],
              new_attributes['mentality_interceptions'], new_attributes['mentality_aggression'],
              new_attributes['attacking_finishing'], new_attributes['power_shot_power'],
@@ -481,102 +528,46 @@ def update_attribute():
              new_attributes['defending_marking_awareness'], new_attributes['defending_standing_tackle'],
              new_attributes['defending_sliding_tackle'], new_attributes['power_jumping'],
              new_attributes['power_stamina'], new_attributes['power_strength'],
+             new_attributes['height'], new_attributes['weight'], new_attributes['prefered_foot'],
              user_id))
-
+        print(cursor)
         mysql.connection.commit()
-
-        # Define attribute groups
-        first_group = [
-            'movement_sprint_speed', 'movement_acceleration', 'mentality_positioning', 'mentality_interceptions',
-            'mentality_aggression', 'attacking_finishing', 'power_shot_power', 'power_long_shots',
-            'attacking_volleys', 'mentality_penalties', 'mentality_vision', 'attacking_crossing',
-            'skill_fk_accuracy', 'attacking_short_passing', 'skill_long_passing', 'skill_curve',
-            'movement_agility', 'movement_balance', 'movement_reactions', 'skill_ball_control',
-            'skill_dribbling', 'mentality_composure', 'attacking_heading_accuracy', 'defending_marking_awareness',
-            'defending_standing_tackle', 'defending_sliding_tackle', 'power_jumping', 'power_stamina', 'power_strength'
-        ]
-
-        second_group = [
-            'movement_sprint_speed', 'mentality_positioning', 'mentality_interceptions', 'mentality_aggression',
-            'attacking_finishing', 'power_shot_power', 'power_long_shots', 'attacking_volleys',
-            'mentality_penalties', 'mentality_vision', 'attacking_crossing', 'skill_fk_accuracy',
-            'attacking_short_passing', 'skill_long_passing', 'skill_curve',
-            'movement_agility', 'movement_balance', 'movement_reactions',
-            'skill_ball_control', 'skill_dribbling', 'mentality_composure',
-            'attacking_heading_accuracy', 'defending_marking_awareness',
-            'defending_standing_tackle', 'defending_sliding_tackle',
-            'power_jumping', 'power_stamina', 'power_strength'
-        ]
-
-        third_group = [
-            'movement_sprint_speed', 'movement_acceleration', 'mentality_positioning',
-            'mentality_interceptions', 'mentality_aggression', 'attacking_finishing',
-            'power_shot_power', 'power_long_shots', 'attacking_volleys', 'mentality_penalties',
-            'mentality_vision', 'attacking_crossing', 'skill_fk_accuracy', 'attacking_short_passing',
-            'skill_long_passing', 'skill_curve', 'movement_agility', 'movement_balance',
-            'movement_reactions', 'skill_ball_control', 'skill_dribbling', 'mentality_composure',
-            'attacking_heading_accuracy', 'defending_marking_awareness', 'defending_standing_tackle',
-            'defending_sliding_tackle', 'power_jumping', 'power_stamina'
-        ]
-
-        # Create DataFrame for new attributes
-        payload_df = pd.DataFrame(new_attributes, index=[0])
-
-        # Extract attributes based on the attribute groups
-        X_test_first = payload_df[list(first_group)]
-        X_test_second = payload_df[list(second_group)]
-        X_test_third = payload_df[list(third_group)]
-
-        # Load the trained models
-        model = pickle.load(open('model_pertama.pkl', 'rb'))
-        model2 = pickle.load(open('model_kedua.pkl', 'rb'))
-        model3 = pickle.load(open('model_ketiga.pkl', 'rb'))
-
-        # Make predictions using the models
-        result = model.predict(X_test_first)
-        result2 = model2.predict(X_test_second)
-        result3 = model3.predict(X_test_third)
-
-        # Create result object
+        print("Data inserted successfully")
+        attributes_series = pd.Series(new_attributes)
+        # Insert into player_positions table
+        alike = infer(attributes_series, player_position_transformed)
         result_object = {
-            'rwb': round(result.tolist()[0][0]),
-            'lwb': round(result.tolist()[0][1]),
-            'rb': round(result.tolist()[0][2]),
-            'lb': round(result.tolist()[0][3]),
-            'cdm': round(result.tolist()[0][4]),
-            'lw': round(result.tolist()[0][5]),
-            'rw': round(result.tolist()[0][6]),
-            'st': round(result.tolist()[0][7]),
-            'cb': round(result2.tolist()[0]),
-            'lm': round(result3.tolist()[0][0]),
-            'rm': round(result3.tolist()[0][1]),
-            'cf': round(result3.tolist()[0][2]),
+            'rwb': round(alike['rwb']),
+            'lwb': round(alike['lwb']),
+            'rb': round(alike['rb']),
+            'lb': round(alike['lb']),
+            'cdm': round(alike['cdm']),
+            'lw': round(alike['lw']),
+            'rw': round(alike['rw']),
+            'st': round(alike['st']),
+            'cb': round(alike['cb']),
+            'lm': round(alike['lm']),
+            'rm': round(alike['rm']),
+            'cf': round(alike['cf']),
         }
+        
+        positions = [pos.upper() for pos, _ in sorted(result_object.items(), key=lambda x: x[1], reverse=True)[:3]]
 
-        # Get 3 best results
-        sorted_result_object = sorted(result_object.items(), key=lambda x: x[1], reverse=True)[:3]
-        positions = [pos.upper() for pos, _ in sorted_result_object]
-
-        # Combine position and player attributes retrieval into a single query
+        player_alike = alike['similar_players']
         cursor.execute(
             'SELECT p.id as position_id, pa.id as player_attributes_id '
             'FROM positions p '
             'JOIN player_attributes2 pa ON pa.user_id = %s '
             'WHERE p.name IN (%s, %s, %s) '
-            'ORDER BY pa.created_date DESC', (user_id, *positions)
+            'ORDER BY pa.created_date DESC', (user_id, positions[0], positions[1], positions[2])
         )
-
+        
         result = cursor.fetchall()
-
-        attributes_series = pd.Series(new_attributes)
-        # Insert into player_positions table
-        alike = infer(attributes_series, player_position_transformed)
-        player_alike = alike['similar_players'][0]
-
+        print(positions,player_alike,result)
         cursor.execute(
-            'INSERT INTO player_positions (user_id, player_attributes_id, position_1, position_2, position_3, player_alike) '
-            'VALUES (%s, %s, %s, %s, %s, %s)',
-            (user_id, result[0]['player_attributes_id'], result[0]['position_id'], result[1]['position_id'], result[2]['position_id'], player_alike)
+            'INSERT INTO player_positions (user_id, player_attributes_id, position_1, position_2, position_3, player_alike1, player_alike2, player_alike3) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
+            (user_id, result[0]['player_attributes_id'], result[0]['position_id'], result[1]['position_id'], result[2]['position_id'], player_alike[0], player_alike[1], player_alike[2])
         )
 
         # Commit changes and close the cursor
@@ -586,7 +577,7 @@ def update_attribute():
         return jsonify({'message': 'Attributes updated successfully', 'status': 'success', 'positions': positions, 'alike': player_alike}), 200
 
     except Exception as e:
-        return jsonify({'message': f'Error updating attributes: {str(e)}'}), 500
+        return jsonify({'message': f'Error attributes: {str(e)}'}), 500
 
 
 def infer(user_skills, players_data):
@@ -645,46 +636,45 @@ def infer(user_skills, players_data):
     predictions_2 = loaded_model_2.predict(user_skills[atribut_model_2].values.reshape(1, -1))
     predictions_3 = loaded_model_3.predict(user_skills[atribut_model_3].values.reshape(1, -1))
 
+   
     # Simpan prediksi ke dalam dictionary
     skill_pred = {
         'rwb': predictions_1[0][0], 'lwb': predictions_1[0][1], 'rb': predictions_1[0][2],
-        'lb': predictions_1[0][3], 'cb': predictions_1[0][4], 'lw': predictions_1[0][5],
-        'rw': predictions_1[0][6], 'st': predictions_1[0][7], 'cb': predictions_2[0],
+        'lb': predictions_1[0][3], 'cdm': predictions_1[0][4], 'lw': predictions_1[0][5],
+        'rw': predictions_1[0][6], 'st': predictions_1[0][7], 'cb': predictions_2[0], 
         'lm': predictions_3[0][0], 'rm': predictions_3[0][1], 'cf': predictions_3[0][2],
     }
-
     # Load players data
     players_data = pd.read_pickle('players_data.pkl')
-
+    
     # Cari pemain serupa berdasarkan prediksi kemampuan
     players_alike = find_top_min_variance_rows(skill_pred, players_data, top_n=3)
-
     # Tambahkan informasi pemain serupa ke dalam dictionary prediksi
     skill_pred['similar_players'] = players_alike.tolist()
 
     return skill_pred
 
-def find_top_min_variance_rows(input_dict, dataframe, top_n=3, min_international_reputation=4):
+def find_top_min_variance_rows(input_dict, dataframe, top_n=3, min_international_reputation=3):
     """
     Mencari baris dengan varians paling rendah antara posisi pemain dalam input dan posisi pemain dalam dataframe.
-
+    
     Parameters:
     - input_dict (dict): Dict yang berisi posisi pemain input dengan nama posisi sebagai kunci dan nilai numerik sebagai nilai.
     - dataframe (pd.DataFrame): DataFrame yang berisi data pemain dengan kolom-kolom termasuk 'international_reputation' dan posisi pemain.
     - top_n (int): Jumlah baris teratas dengan varians paling rendah yang ingin diambil. Default: 3.
     - min_international_reputation (int): Nilai reputasi internasional minimum yang dibutuhkan untuk mempertimbangkan pemain. Default: 4.
-
+    
     Returns:
     - pd.Series: Seri berisi nama-nama pemain dengan varians paling rendah untuk posisi yang diberikan.
                 Jika tidak ada pemain yang memenuhi kriteria, kembalikan DataFrame kosong.
     """
-
     input_values = np.array(list(input_dict.values()))
 
     filtered_dataframe = dataframe[dataframe['international_reputation'] >= min_international_reputation]
 
     if filtered_dataframe.empty:
-        return pd.Series()
+        return pd.DataFrame()
+    
 
     positions = filtered_dataframe[['rwb', 'lwb', 'rb', 'lb', 'cb', 'cdm', 'lm', 'rm', 'lw', 'rw', 'cf', 'st']]
 
