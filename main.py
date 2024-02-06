@@ -15,6 +15,10 @@ from sklearn.metrics import make_scorer
 from numpy import absolute
 from sklearn.model_selection import cross_val_score
 from sklearn.pipeline import Pipeline
+from flask import request, jsonify
+import bcrypt
+import jwt
+import datetime
 
 # Flask app settings
 app = Flask(__name__)
@@ -112,10 +116,7 @@ def get_user():
     user = cursor.fetchone()
     return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
 
-from flask import request, jsonify
-import bcrypt
-import jwt
-import datetime
+
 
 @app.route('/register', methods=['POST'])
 def register():
