@@ -19,6 +19,9 @@ from flask import request, jsonify
 import bcrypt
 import jwt
 import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Flask app settings
 app = Flask(__name__)
@@ -68,12 +71,13 @@ player_position_transformed = convert_strings_to_integers(player_position)
 model = pickle.load(open('model_pertama.pkl', 'rb'))
 
 # Mysql Settings
-app.config['MYSQL_USER'] = os.getenv('MYSQL_USER') or 'root'
-app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD') or ''
-app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST') or '127.0.0.1' # localhost
-app.config['MYSQL_DB'] = os.getenv('MYSQL_DB') or 'soccer_db'
+app.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
+app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST')
+app.config['MYSQL_DB'] = os.getenv('MYSQL_DB')
 app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 
+print(os.getenv('MYSQL_USER'),app)
 # MySQL Connection
 mysql = MySQL(app)
 
@@ -144,7 +148,7 @@ def register():
         cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
         user = cursor.fetchone()
         user_id = user['id']
-        print(user_id,user)
+        
         if role == 1:
             cursor.execute('INSERT INTO players (user_id, birth_date) VALUES (%s, %s)', (user_id, birth_date))
             mysql.connection.commit()
@@ -195,6 +199,7 @@ def create_article():
 
     # merge array
     positions = [position_1, position_2, position_3]
+    print(positions)
     create_date = datetime.datetime.now()
     cursor.execute('INSERT INTO articles (title, body, steps, thumbnail, create_date, user_id) VALUES (%s, %s, %s, %s, %s, %s)', (title, body, steps, thumbnail, create_date, user_id))
     mysql.connection.commit()
@@ -202,10 +207,11 @@ def create_article():
     id = cursor.lastrowid
 
     for position in positions:
+        print(position,id)
         cursor.execute('INSERT INTO article_positions (article_id, position_id) VALUES (%s, %s)', (id, position))
         mysql.connection.commit()
 
-    return jsonify({'message': 'Article created successfully','status': 'success'})
+    return jsonify({'message': 'Article created successfully','status': 'success', 'data': {'id': id}})
 
 @app.route('/articles/attributes/<int:id>', methods=['GET'])
 def get_article_attributes_by_id(id):
