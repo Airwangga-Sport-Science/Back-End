@@ -106,6 +106,21 @@ def authenticate():
             return jsonify({'status': 'success', 'message': 'Authentication successful', 'data': {'token': token}}), 200
     return jsonify({'message': 'Authentication failed'}), 401
 
+@app.route('/users', methods=['GET'])
+def get_users():
+    decoded = check_token()
+
+    if decoded is None:
+        return jsonify({'message': 'Authentication failed'}), 401
+    
+    id = decoded['user_id']
+
+    cursor = mysql.connection.cursor() # get the cursor from the connection
+    cursor.execute('SELECT * FROM users ')
+    user = cursor.fetchall()
+    return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
+
+
 @app.route('/user', methods=['GET'])
 def get_user():
     decoded = check_token()
@@ -120,6 +135,54 @@ def get_user():
     user = cursor.fetchone()
     return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
 
+@app.route('/user', methods=['PUT'])
+def update_user():
+    decoded = check_token()
+
+    if decoded is None:
+        return jsonify({'message': 'Authentication failed'}), 401
+
+    try:
+        id = decoded['user_id']
+        name = request.json['name']
+        email = request.json['email']
+        phone = request.json['phone']
+        birth_date = request.json['birth_date']
+        username = request.json['username']
+        password = request.json['password']
+        role = request.json['role']
+        thumbnail = request.json['thumbnail']
+
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        hashed_pass = hashed_password.decode('utf-8')
+
+        cursor = mysql.connection.cursor() # get the cursor from the connection
+        if password != '':
+            cursor.execute('UPDATE users SET name=%s, email=%s, phone=%s, username=%s, password=%s, role=%s WHERE id=%s', (name, email, phone, username, hashed_pass, role, id))
+
+        elif password == '':
+            cursor.execute('UPDATE users SET name=%s, email=%s, phone=%s, username=%s, role=%s WHERE id=%s', (name, email, phone, username, role, id))
+
+
+        if role == 1:
+            if birth_date != '':
+                cursor.execute('UPDATE players SET birth_date=%s, thumbnail=%s WHERE user_id=%s', (birth_date, thumbnail, id))
+            
+            elif birth_date == '':
+                cursor.execute('UPDATE players SET thumbnail=%s WHERE user_id=%s', (thumbnail, id))
+            
+
+            
+        
+        mysql.connection.commit()
+
+        cursor.execute('SELECT * FROM users LEFT JOIN players ON users.id = players.user_id WHERE id=%s', (id,))
+        user = cursor.fetchone()
+
+        return jsonify({'status': 'success', 'message': 'User Updated successfully', 'data': user})
+    
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
 
 @app.route('/register', methods=['POST'])
@@ -132,6 +195,7 @@ def register():
         email = request.json['email']
         phone = request.json['phone']
         birth_date = request.json['birthdate']
+        thumbnail = request.json['thumbnail']
 
         cursor = mysql.connection.cursor() # get the cursor from the connection
         cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
@@ -150,7 +214,7 @@ def register():
         user_id = user['id']
         
         if role == 1:
-            cursor.execute('INSERT INTO players (user_id, birth_date) VALUES (%s, %s)', (user_id, birth_date))
+            cursor.execute('INSERT INTO players (user_id, birth_date,thumbnail) VALUES (%s, %s, %s)', (user_id, birth_date, thumbnail))
             mysql.connection.commit()
 
         token = jwt.encode(payload={'user_id': user['id'], 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=2)},
@@ -216,6 +280,13 @@ def create_article():
 @app.route('/articles/attributes/<int:id>', methods=['GET'])
 def get_article_attributes_by_id(id):
     cursor = mysql.connection.cursor()
+
+    cursor.execute('SELECT * FROM player_positions WHERE player_attributes_id = %s', (id,))
+
+    player_attributes = cursor.fetchone()
+
+    positions = [player_attributes['position_1'], player_attributes['position_2'], player_attributes['position_3']]
+
     cursor.execute('''
     SELECT 
         a.id AS article_id,
@@ -236,16 +307,10 @@ def get_article_attributes_by_id(id):
     LEFT JOIN 
         user_articles ua ON a.id = ua.article_id
     WHERE 
-        ap.position_id IN (
-            SELECT position_1 FROM player_positions WHERE player_attributes_id = %s
-            UNION
-            SELECT position_2 FROM player_positions WHERE player_attributes_id = %s
-            UNION
-            SELECT position_3 FROM player_positions WHERE player_attributes_id = %s
-        )
+        ap.position_id IN (%s, %s, %s)
     GROUP BY 
         a.id, a.title, a.body, ua.user_id
-    ''', (id, id, id))
+    ''', (positions[0], positions[1], positions[2]))
 
     article_attributes = cursor.fetchall()
 
