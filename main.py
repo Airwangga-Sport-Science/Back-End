@@ -108,12 +108,7 @@ def authenticate():
 
 @app.route('/users', methods=['GET'])
 def get_users():
-    decoded = check_token()
 
-    if decoded is None:
-        return jsonify({'message': 'Authentication failed'}), 401
-    
-    id = decoded['user_id']
 
     cursor = mysql.connection.cursor() # get the cursor from the connection
     cursor.execute('SELECT * FROM users ')
@@ -143,7 +138,11 @@ def update_user():
         return jsonify({'message': 'Authentication failed'}), 401
 
     try:
-        id = decoded['user_id']
+        if (request.json['id']):
+            id = request.json['id']
+        else:
+            id = decoded['user_id']
+            
         name = request.json['name']
         email = request.json['email']
         phone = request.json['phone']
@@ -515,7 +514,7 @@ def get_attribute(id):
                     'movement_agility, movement_balance, movement_reactions, skill_ball_control, '
                     'skill_dribbling, mentality_composure, attacking_heading_accuracy, '
                     'defending_marking_awareness, defending_standing_tackle, defending_sliding_tackle, '
-                    'power_jumping, power_stamina, power_strength FROM player_attributes2 WHERE id=%s', (id,))
+                    'power_jumping, power_stamina, power_strength, height, weight, prefered_foot FROM player_attributes2 WHERE id=%s', (id,))
     attribute = cursor.fetchone()
 
     return jsonify({'message': 'Attribute retrieved successfully', 'data': attribute, 'status': 'success'}), 200
@@ -742,7 +741,8 @@ def find_top_min_variance_rows(input_dict, dataframe, top_n=3, min_international
     """
     input_values = np.array(list(input_dict.values()))
 
-    filtered_dataframe = dataframe[dataframe['international_reputation'] >= min_international_reputation]
+    filtered = dataframe[dataframe['international_reputation'] >= min_international_reputation]
+    filtered_dataframe = filtered[filtered['positions'] != "GK"]
 
     if filtered_dataframe.empty:
         return pd.DataFrame()
