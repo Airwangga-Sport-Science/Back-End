@@ -111,7 +111,7 @@ def get_users():
 
 
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('SELECT * FROM users ')
+    cursor.execute('SELECT * FROM users where status = 1')
     user = cursor.fetchall()
     return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
 
@@ -183,6 +183,14 @@ def update_user():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
+@app.route('/user/<int:id>', methods=['DELETE'])
+def delete_user(id):
+    cursor = mysql.connection.cursor() # get the cursor from the connection
+    cursor.execute('UPDATE users SET status = 0 WHERE id = %s', (id,))
+    mysql.connection.commit()
+
+    return jsonify({'message': 'User deleted successfully', 'status': 'success'})
+
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -237,7 +245,16 @@ def display_positions():
 @app.route('/articles', methods=['GET'])
 def display_articles():
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('SELECT articles.*, GROUP_CONCAT(positions.name) AS positions, users.name AS user_name FROM articles LEFT JOIN article_positions ON articles.id = article_positions.article_id LEFT JOIN positions ON article_positions.position_id = positions.id LEFT JOIN users ON articles.user_id = users.id GROUP BY articles.id')
+    cursor.execute("""
+        SELECT articles.*, GROUP_CONCAT(positions.name) AS positions, users.name AS user_name 
+        FROM articles 
+        LEFT JOIN article_positions ON articles.id = article_positions.article_id 
+        LEFT JOIN positions ON article_positions.position_id = positions.id 
+        LEFT JOIN users ON articles.user_id = users.id 
+        WHERE articles.deleted = 0 
+        GROUP BY articles.id
+    """)
+
 
     articles = cursor.fetchall()
     return jsonify({'message': 'Articles retrieved successfully', 'data': articles, 'status': 'success'})
@@ -299,7 +316,7 @@ def get_article_attributes_by_id(id):
         ua.status AS player_status
     FROM 
         articles a
-    LEFT JOIN 
+    RIGHT JOIN 
         article_positions ap ON a.id = ap.article_id
     LEFT JOIN 
         positions p ON ap.position_id = p.id
@@ -307,18 +324,25 @@ def get_article_attributes_by_id(id):
         user_articles ua ON a.id = ua.article_id
     WHERE 
         ap.position_id IN (%s, %s, %s)
+        and a.deleted = 0 
     GROUP BY 
-        a.id, a.title, a.body, ua.user_id
+        a.id
     ''', (positions[0], positions[1], positions[2]))
 
     article_attributes = cursor.fetchall()
-
+    print(article_attributes)
     return jsonify({'message': 'Article attributes retrieved successfully', 'data': article_attributes, 'status': 'success'})
 
 @app.route('/articles/complete/<int:id>', methods=['GET'])
 def get_completed_articles(id):
+    decoded = check_token()
+
+    if decoded is None:
+        return jsonify({'message': 'Authentication failed'}), 401
+    
+    user_id = decoded['user_id']
     cursor = mysql.connection.cursor()
-    cursor.execute('SELECT * FROM user_articles WHERE user_id = %s AND article_id = %s AND status = 1', (id, id))
+    cursor.execute('SELECT * FROM user_articles WHERE user_id = %s AND article_id = %s AND status = 1', (user_id, id))
     articles = cursor.fetchall()
     
     if len(articles) == 0:
@@ -347,7 +371,7 @@ def complete_article(id):
 @app.route('/articles/<int:id>', methods=['GET'])
 def display_article(id):
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('SELECT articles.id, articles.title, articles.body, articles.steps, articles.thumbnail, GROUP_CONCAT(positions.name) AS position_names FROM articles LEFT JOIN article_positions ON articles.id = article_positions.article_id LEFT JOIN positions ON article_positions.position_id = positions.id WHERE articles.id=%s GROUP BY articles.id', (id,))
+    cursor.execute('SELECT articles.id, articles.title, articles.body, articles.steps, articles.thumbnail, GROUP_CONCAT(positions.name) AS position_names FROM articles LEFT JOIN article_positions ON articles.id = article_positions.article_id LEFT JOIN positions ON article_positions.position_id = positions.id WHERE articles.id=%s AND articles.deleted = 0 GROUP BY articles.id', (id,))
 
 
     article = cursor.fetchone()
@@ -393,10 +417,10 @@ def update_article(id):
 @app.route('/articles/<int:id>', methods=['DELETE'])
 def delete_article(id):
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('UPDATE articles SET deleted = 0 WHERE id = %s', (id,))
+    cursor.execute('UPDATE articles SET deleted = 1 WHERE id = %s', (id,))
     mysql.connection.commit()
 
-    return jsonify({'message': 'Article deleted successfully'})
+    return jsonify({'message': 'Article deleted successfully', 'status': 'success'})
 
 
 
