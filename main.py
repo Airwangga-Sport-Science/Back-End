@@ -111,7 +111,7 @@ def get_users():
 
 
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('SELECT * FROM users where status = 1')
+    cursor.execute('SELECT * FROM users LEFT JOIN players ON users.id = players.user_id where status = 1')
     user = cursor.fetchall()
     return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
 
@@ -276,12 +276,14 @@ def create_article():
     position_1 = request.json['position_1']
     position_2 = request.json['position_2']
     position_3 = request.json['position_3']
+    min_age = request.json['min_age']
+    max_age = request.json['max_age']
 
     # merge array
     positions = [position_1, position_2, position_3]
     print(positions)
     create_date = datetime.datetime.now()
-    cursor.execute('INSERT INTO articles (title, body, steps, thumbnail, create_date, user_id) VALUES (%s, %s, %s, %s, %s, %s)', (title, body, steps, thumbnail, create_date, user_id))
+    cursor.execute('INSERT INTO articles (title, body, steps, thumbnail, create_date, user_id, min_age, max_age) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)', (title, body, steps, thumbnail, create_date, user_id, min_age, max_age))
     mysql.connection.commit()
 
     id = cursor.lastrowid
@@ -295,6 +297,14 @@ def create_article():
 
 @app.route('/articles/attributes/<int:id>', methods=['GET'])
 def get_article_attributes_by_id(id):
+
+    decoded = check_token()
+
+    if decoded is None:
+        return jsonify({'message': 'Authentication failed'}), 401
+    
+    user_id = decoded['user_id']
+
     cursor = mysql.connection.cursor()
 
     cursor.execute('SELECT * FROM player_positions WHERE player_attributes_id = %s', (id,))
@@ -302,32 +312,35 @@ def get_article_attributes_by_id(id):
     player_attributes = cursor.fetchone()
 
     positions = [player_attributes['position_1'], player_attributes['position_2'], player_attributes['position_3']]
-
+    print(user_id,positions[0], positions[1], positions[2])
     cursor.execute('''
-    SELECT 
-        a.id AS article_id,
-        a.title AS article_title,
-        a.body AS article_body,
-        GROUP_CONCAT(DISTINCT p.name) AS article_positions,
-        a.steps AS article_steps,
-        a.thumbnail AS article_thumbnail,
-        a.create_date AS article_create_date,
-        ua.user_id AS player_user_id,
-        ua.status AS player_status
-    FROM 
-        articles a
-    RIGHT JOIN 
-        article_positions ap ON a.id = ap.article_id
-    LEFT JOIN 
-        positions p ON ap.position_id = p.id
-    LEFT JOIN 
-        user_articles ua ON a.id = ua.article_id
-    WHERE 
-        ap.position_id IN (%s, %s, %s)
-        and a.deleted = 0 
-    GROUP BY 
-        a.id
-    ''', (positions[0], positions[1], positions[2]))
+ SELECT 
+    a.id AS article_id,
+    a.title AS article_title,
+    a.body AS article_body,
+    GROUP_CONCAT(DISTINCT p.name) AS article_positions,
+    a.steps AS article_steps,
+    a.thumbnail AS article_thumbnail,
+    a.create_date AS article_create_date,
+    ua.user_id AS player_user_id,
+    ua.status AS player_status
+FROM 
+    articles a
+LEFT JOIN 
+    article_positions ap ON a.id = ap.article_id
+LEFT JOIN 
+    positions p ON ap.position_id = p.id
+LEFT JOIN 
+    user_articles ua ON a.id = ua.article_id
+LEFT JOIN
+    players ON %s = players.user_id
+WHERE 
+    ap.position_id IN (%s, %s, %s)
+    AND players.birth_date BETWEEN DATE_SUB(NOW(), INTERVAL a.max_age YEAR) AND DATE_SUB(NOW(), INTERVAL a.min_age YEAR)
+    AND a.deleted = 0 
+GROUP BY 
+    a.id
+    ''', (user_id,positions[0], positions[1], positions[2]))
 
     article_attributes = cursor.fetchall()
     print(article_attributes)
@@ -371,7 +384,7 @@ def complete_article(id):
 @app.route('/articles/<int:id>', methods=['GET'])
 def display_article(id):
     cursor = mysql.connection.cursor() # get the cursor from the connection
-    cursor.execute('SELECT articles.id, articles.title, articles.body, articles.steps, articles.thumbnail, GROUP_CONCAT(positions.name) AS position_names FROM articles LEFT JOIN article_positions ON articles.id = article_positions.article_id LEFT JOIN positions ON article_positions.position_id = positions.id WHERE articles.id=%s AND articles.deleted = 0 GROUP BY articles.id', (id,))
+    cursor.execute('SELECT articles.*, GROUP_CONCAT(positions.name) AS position_names FROM articles LEFT JOIN article_positions ON articles.id = article_positions.article_id LEFT JOIN positions ON article_positions.position_id = positions.id WHERE articles.id=%s AND articles.deleted = 0 GROUP BY articles.id', (id,))
 
 
     article = cursor.fetchone()
@@ -394,12 +407,14 @@ def update_article(id):
     position_1 = request.json['position_1']
     position_2 = request.json['position_2']
     position_3 = request.json['position_3']
+    min_age = request.json['min_age']
+    max_age = request.json['max_age']
 
     # merge array
     positions = [position_1, position_2, position_3]
     create_date = datetime.datetime.now()
 
-    cursor.execute('UPDATE articles SET title=%s, body=%s, steps=%s, thumbnail=%s, create_date=%s WHERE id=%s', (title, body, steps, thumbnail, create_date, id ))
+    cursor.execute('UPDATE articles SET title=%s, body=%s, steps=%s, thumbnail=%s, create_date=%s , min_age=%s, max_age=%s WHERE id=%s', (title, body, steps, thumbnail, create_date, min_age, max_age, id))
     mysql.connection.commit()
 
     cursor.execute('DELETE FROM article_positions WHERE article_id=%s', (id,))
