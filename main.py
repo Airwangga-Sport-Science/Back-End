@@ -201,8 +201,12 @@ def register():
         name = request.json['name']
         email = request.json['email']
         phone = request.json['phone']
-        birth_date = request.json['birthdate']
-        thumbnail = request.json['thumbnail']
+        if hasattr(request.json, 'birthdate'):
+            birth_date = request.json['birthdate']
+        if hasattr(request.json, 'thumbnail'):
+            thumbnail = request.json['thumbnail']
+        else :
+            thumbnail = ''
 
         cursor = mysql.connection.cursor() # get the cursor from the connection
         cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
@@ -272,7 +276,10 @@ def create_article():
     title = request.json['title']
     body = request.json['body']
     steps = request.json['steps']
-    thumbnail = request.json['thumbnail']
+    if hasattr(request.json, 'thumbnail'):
+        thumbnail = request.json['thumbnail']
+    else:
+        thumbnail = ''
     position_1 = request.json['position_1']
     position_2 = request.json['position_2']
     position_3 = request.json['position_3']
