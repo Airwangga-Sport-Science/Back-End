@@ -201,8 +201,12 @@ def register():
         name = request.json['name']
         email = request.json['email']
         phone = request.json['phone']
-        birth_date = request.json['birthdate']
-        thumbnail = request.json['thumbnail']
+        if hasattr(request.json, 'birthdate'):
+            birth_date = request.json['birthdate']
+        if hasattr(request.json, 'thumbnail'):
+            thumbnail = request.json['thumbnail']
+        else :
+            thumbnail = ''
 
         cursor = mysql.connection.cursor() # get the cursor from the connection
         cursor.execute('SELECT * FROM users WHERE username=%s', (username,))
@@ -272,7 +276,10 @@ def create_article():
     title = request.json['title']
     body = request.json['body']
     steps = request.json['steps']
-    thumbnail = request.json['thumbnail']
+    if hasattr(request.json, 'thumbnail'):
+        thumbnail = request.json['thumbnail']
+    else:
+        thumbnail = ''
     position_1 = request.json['position_1']
     position_2 = request.json['position_2']
     position_3 = request.json['position_3']
@@ -280,8 +287,16 @@ def create_article():
     max_age = request.json['max_age']
 
     # merge array
-    positions = [position_1, position_2, position_3]
-    print(positions)
+    positions = []
+    if position_1 != "0":
+        positions.append(position_1)
+    if position_2 != "0":
+        positions.append(position_2)
+    if position_3 != "0":
+        positions.append(position_3)
+
+    print(positions,position_1,position_2,position_3)
+
     create_date = datetime.datetime.now()
     cursor.execute('INSERT INTO articles (title, body, steps, thumbnail, create_date, user_id, min_age, max_age) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)', (title, body, steps, thumbnail, create_date, user_id, min_age, max_age))
     mysql.connection.commit()
@@ -411,7 +426,15 @@ def update_article(id):
     max_age = request.json['max_age']
 
     # merge array
-    positions = [position_1, position_2, position_3]
+    # merge array
+    positions = []
+    if position_1 != "0":
+        positions.append(position_1)
+    if position_2 != "0":
+        positions.append(position_2)
+    if position_3 != "0":
+        positions.append(position_3)
+
     create_date = datetime.datetime.now()
 
     cursor.execute('UPDATE articles SET title=%s, body=%s, steps=%s, thumbnail=%s, create_date=%s , min_age=%s, max_age=%s WHERE id=%s', (title, body, steps, thumbnail, create_date, min_age, max_age, id))
