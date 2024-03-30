@@ -113,6 +113,9 @@ def get_users():
     cursor = mysql.connection.cursor() # get the cursor from the connection
     cursor.execute('SELECT * FROM users LEFT JOIN players ON users.id = players.user_id where status = 1')
     user = cursor.fetchall()
+
+    
+    
     return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
 
 
@@ -128,7 +131,13 @@ def get_user():
     cursor = mysql.connection.cursor() # get the cursor from the connection
     cursor.execute('SELECT * FROM users WHERE id=%s', (id,))
     user = cursor.fetchone()
-    return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user})
+
+    cursor.execute('SELECT * FROM player_attributes2 where user_id = %s', (id,))
+    attributes = cursor.fetchall()
+
+    user['attributes'] = attributes
+
+    return jsonify({'status': 'success', 'message': 'User retrieved successfully', 'data': user,})
 
 @app.route('/user', methods=['PUT'])
 def update_user():
@@ -201,9 +210,9 @@ def register():
         name = request.json['name']
         email = request.json['email']
         phone = request.json['phone']
-        if hasattr(request.json, 'birthdate'):
+        if 'birthdate' in request.json:
             birth_date = request.json['birthdate']
-        if hasattr(request.json, 'thumbnail'):
+        if 'thumbnail' in request.json:
             thumbnail = request.json['thumbnail']
         else :
             thumbnail = ''
@@ -276,7 +285,7 @@ def create_article():
     title = request.json['title']
     body = request.json['body']
     steps = request.json['steps']
-    if hasattr(request.json, 'thumbnail'):
+    if 'thumbnail' in request.json:
         thumbnail = request.json['thumbnail']
     else:
         thumbnail = ''
@@ -440,7 +449,7 @@ def update_article(id):
     cursor.execute('UPDATE articles SET title=%s, body=%s, steps=%s, thumbnail=%s, create_date=%s , min_age=%s, max_age=%s WHERE id=%s', (title, body, steps, thumbnail, create_date, min_age, max_age, id))
     mysql.connection.commit()
 
-    cursor.execute('DELETE FROM article_positions WHERE article_id=%s', (id,))
+    cursor.execute('DELETE de FROM article_positions WHERE article_id=%s', (id,))
     mysql.connection.commit()
 
     for position in positions:
