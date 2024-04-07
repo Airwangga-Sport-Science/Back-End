@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_mysqldb import MySQL
 import pandas as pd
 import numpy as np
@@ -20,7 +20,8 @@ import bcrypt
 import jwt
 import datetime
 from dotenv import load_dotenv
-
+from werkzeug.utils import secure_filename
+import time
 load_dotenv()
 
 # Flask app settings
@@ -449,7 +450,7 @@ def update_article(id):
     cursor.execute('UPDATE articles SET title=%s, body=%s, steps=%s, thumbnail=%s, create_date=%s , min_age=%s, max_age=%s WHERE id=%s', (title, body, steps, thumbnail, create_date, min_age, max_age, id))
     mysql.connection.commit()
 
-    cursor.execute('DELETE de FROM article_positions WHERE article_id=%s', (id,))
+    cursor.execute('DELETE FROM article_positions WHERE article_id=%s', (id,))
     mysql.connection.commit()
 
     for position in positions:
@@ -720,6 +721,29 @@ def update_attribute():
 
     except Exception as e:
         return jsonify({'message': f'Error attributes: {str(e)}'}), 500
+
+@app.route('/uploads', methods=['POST'])
+def upload_file():
+    if 'thumbnail' not in request.files:
+        return jsonify({'error': 'No files received.'}), 400
+    
+    file = request.files['thumbnail']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    filename =time.strftime("%Y%m%d%H%M%S")  + secure_filename(file.filename) 
+    upload_folder = os.path.join(os.getcwd(), 'public', 'uploads')
+    if not os.path.exists(upload_folder):
+        os.makedirs(upload_folder)
+    file_path = os.path.join(upload_folder, filename)
+    file.save(file_path)
+    return jsonify({'Message': 'Success', 'status': 201, 'filePath': f'/uploads/{filename}', 'ok': True}), 201
+
+@app.route('/uploads/<filename>', methods=['GET'])
+def uploaded_file(filename):
+    return send_from_directory(os.path.join(os.getcwd(), 'public', 'uploads'), filename)
+
+
 
 
 def infer(user_skills, players_data):
