@@ -148,11 +148,14 @@ def update_user():
         return jsonify({'message': 'Authentication failed'}), 401
 
     try:
-        if (request.json['id']):
+
+        if 'id' in request.json:
             id = request.json['id']
         else:
             id = decoded['user_id']
-            
+
+  
+
         name = request.json['name']
         email = request.json['email']
         phone = request.json['phone']
@@ -185,9 +188,8 @@ def update_user():
         
         mysql.connection.commit()
 
-        cursor.execute('SELECT * FROM users LEFT JOIN players ON users.id = players.user_id WHERE id=%s', (id,))
+        cursor.execute('SELECT * FROM users WHERE id=%s', (id,))
         user = cursor.fetchone()
-
         return jsonify({'status': 'success', 'message': 'User Updated successfully', 'data': user})
     
     except Exception as e:
@@ -487,6 +489,7 @@ def get_player():
     cursor.execute('SELECT * FROM players LEFT JOIN users ON players.user_id = users.id WHERE players.user_id = %s', (id,))
     player = cursor.fetchone()
 
+    print(player,id)
     cursor2 = mysql.connection.cursor()  # get the cursor from the connection
     cursor2.execute(
     'SELECT movement_sprint_speed, movement_acceleration, mentality_positioning, mentality_interceptions, '
@@ -504,7 +507,7 @@ def get_player():
     #foreach attribute
     for attribute in attributes:
         cursor2.execute(
-            'SELECT pos1.name, pos2.name, pos3.name, player_alike1, player_alike2, player_alike3 FROM player_positions LEFT JOIN positions as pos1 ON player_positions.position_1 = pos1.id LEFT JOIN positions as pos2 ON player_positions.position_2 = pos2.id LEFT JOIN positions as pos3 ON player_positions.position_3 = pos3.id WHERE player_attributes_id = %s', (attribute['id'],)
+            'SELECT pos1.name, pos2.name, pos3.name, player_alike1, player_alike2, player_alike3,score_1, score_2, score_3, position_alike1, position_alike2, position_alike3 FROM player_positions LEFT JOIN positions as pos1 ON player_positions.position_1 = pos1.id LEFT JOIN positions as pos2 ON player_positions.position_2 = pos2.id LEFT JOIN positions as pos3 ON player_positions.position_3 = pos3.id WHERE player_attributes_id = %s', (attribute['id'],)
         )
         positions = cursor2.fetchone()
 
@@ -606,6 +609,7 @@ def create_attribute():
         attributes_series = pd.Series(new_attributes)
         # Insert into player_positions table
         alike = infer(attributes_series, player_position_transformed)
+        print(alike,"test2")
         result_object = {
             'rwb': round(alike['rwb']),
             'lwb': round(alike['lwb']),
@@ -621,11 +625,23 @@ def create_attribute():
             'cf': round(alike['cf']),
         }
         
-        positons = [pos.upper() for pos, _ in sorted(result_object.items(), key=lambda x: x[1], reverse=True)[:3]]
+        # Urutkan hasil berdasarkan skor dan ambil 3 posisi tertinggi
+        sorted_results = sorted(result_object.items(), key=lambda x: x[1], reverse=True)[:3]
 
+        # Dapatkan posisi dan skor dari hasil yang sudah diurutkan
+        positions = [pos.upper() for pos, _ in sorted_results]
+        score_positions = [score for _, score in sorted_results]
+
+        print(positions, score_positions, result_object)
         player_alike = alike['similar_players']
+        positions_alike = alike['similar_players_positions']
 
-        return jsonify({'message': 'Attributes updated successfully', 'status': 'success','positions': positons, 'alike': player_alike[0]}), 200
+
+
+        total_score = sum(score_positions)
+        percentage_scores = [(score / total_score) * 100 for score in score_positions]
+
+        return jsonify({'message': 'Attributes updated successfully', 'status': 'success','positions': positions, 'alike': player_alike[0], 'alike_positions': positions_alike[0], 'score': percentage_scores}), 200
 
     except Exception as e:
         return jsonify({'message': f'Error updating attributes: {str(e)}'}), 500
@@ -679,6 +695,7 @@ def update_attribute():
         attributes_series = pd.Series(new_attributes)
         # Insert into player_positions table
         alike = infer(attributes_series, player_position_transformed)
+        print(alike,"test")
         result_object = {
             'rwb': round(alike['rwb']),
             'lwb': round(alike['lwb']),
@@ -694,9 +711,23 @@ def update_attribute():
             'cf': round(alike['cf']),
         }
         
-        positions = [pos.upper() for pos, _ in sorted(result_object.items(), key=lambda x: x[1], reverse=True)[:3]]
+        # Urutkan hasil berdasarkan skor dan ambil 3 posisi tertinggi
+        sorted_results = sorted(result_object.items(), key=lambda x: x[1], reverse=True)[:3]
+
+        # Dapatkan posisi dan skor dari hasil yang sudah diurutkan
+        positions = [pos.upper() for pos, _ in sorted_results]
+        score_positions = [score for _, score in sorted_results]
+
+        print(positions, score_positions, result_object)
+        player_alike = alike['similar_players']
+
+        total_score = sum(score_positions)
+        percentage_scores = [(score / total_score) * 100 for score in score_positions]
+        
 
         player_alike = alike['similar_players']
+        positions_alike = alike['similar_players_positions']
+        
         cursor.execute(
             'SELECT p.id as position_id, pa.id as player_attributes_id '
             'FROM positions p '
@@ -706,12 +737,13 @@ def update_attribute():
         )
         
         result = cursor.fetchall()
-        print(positions,player_alike,result)
+        print(positions,player_alike,positions,user_id,result,percentage_scores,positions_alike)
         cursor.execute(
-            'INSERT INTO player_positions (user_id, player_attributes_id, position_1, position_2, position_3, player_alike1, player_alike2, player_alike3) '
-            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
-            (user_id, result[0]['player_attributes_id'], result[0]['position_id'], result[1]['position_id'], result[2]['position_id'], player_alike[0], player_alike[1], player_alike[2])
+            'INSERT INTO player_positions (user_id, player_attributes_id, position_1, position_2, position_3, player_alike1, player_alike2, player_alike3, score_1, score_2, score_3, position_alike1, position_alike2, position_alike3) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+            (user_id, result[0]['player_attributes_id'], result[0]['position_id'], result[1]['position_id'], result[2]['position_id'], player_alike[0], player_alike[1], player_alike[2], percentage_scores[0], percentage_scores[1], percentage_scores[2], positions_alike[0], positions_alike[1], positions_alike[2])
         )
+
 
         # Commit changes and close the cursor
         mysql.connection.commit()
@@ -815,8 +847,15 @@ def infer(user_skills, players_data):
     
     # Cari pemain serupa berdasarkan prediksi kemampuan
     players_alike = find_top_min_variance_rows(skill_pred, players_data, top_n=3)
+
+    print(players_alike['long_name'])
     # Tambahkan informasi pemain serupa ke dalam dictionary prediksi
-    skill_pred['similar_players'] = players_alike.tolist()
+    skill_pred['similar_players'] = players_alike['long_name'].tolist()
+
+    # Tambahkan posisi pemain serupa ke dalam dictionary prediksi
+    skill_pred['similar_players_positions'] = players_alike['positions'].tolist()
+
+    print(skill_pred,"as    ")
 
     return skill_pred
 
@@ -854,8 +893,14 @@ def find_top_min_variance_rows(input_dict, dataframe, top_n=3, min_international
     # Cari top N varians paling minimum
     top_rows = filtered_dataframe.loc[top_indices]
 
-    return top_rows['long_name']
+
+    return top_rows 
+
+
+port = int(os.environ.get('PORT', 5000))
+
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+
+    app.run(debug=True, host="0.0.0.0", port=port)
